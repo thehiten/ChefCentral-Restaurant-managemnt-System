@@ -1,21 +1,111 @@
 const express = require('express');
 const router = express.Router();
 const Person = require('../models/Person'); // this is model and important 
-router.post('/', async (req, res)=>{
-    try{
-      const data = req.body
-      const newPerson = new Person(data); 
-      const savedPerson = await newPerson.save();  // wait karo jab tak data save nai jata 
-      console.log('data saved');
-      res.status(200).json(savedPerson);
+
+const {jwtAuthMiddleware, generateToken} = require('./../jwt')
+
+router.post('/', async (req, res) => {
+    try {
+        const data = req.body;
+        const newPerson = new Person(data);
+        const savedPerson = await newPerson.save();
+        console.log('Data saved');
+        
+        const payload ={
+          id: savedPerson.id,
+          username: savedPerson.username
+
+        }
+
+        const token = generateToken(payload);
+
+        console.log("Token generated:", token);
+
+        // Combine savedPerson and token into a single object before sending as response
+        const responseData = {
+            person: savedPerson,
+            token: token
+        };
+
+        res.status(200).json(responseData);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal server error', details: err.message });
     }
-    catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Internal server error', details: err.message });
+});
+
+// login Routes
+
+router.post('/login', async (req, res) => {
+  try {
+      // extract username and password from request body
+      const { username, password } = req.body;
+
+      // find the user by username
+      const user = await Person.findOne({ username: username });
+       
+      if (!user) {
+        // If user doesn't exist, respond with an error
+        res.status(401).json({ message: 'Invalid username or password' });
+        return; // Exit the function early
+      }
+  
+      // Check if the password matches
+      const passwordMatches = await user.comparePassword(password);
+      if (!passwordMatches) {
+        // If password doesn't match, respond with an error
+        res.status(401).json({ message: 'Invalid username or password' });
+        return; // Exit the function early
+      }
+
+
+        // If both user exists and password matches, generate token
+        const payload = {
+          id: user.id,
+          username: user.username
+        };
+
+        const token = generateToken(payload);
+
+
+        // return token as response
+
+        res.json({token});
+  }
+
+     catch (error) {
+      // Error occurred during login process
+      console.error('Error during login:', error);
+      res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-router.get('/', async (req, res) => {
+
+// profile routes
+
+
+router.get('/profile', jwtAuthMiddleware, async (req, res) => {
+    try {
+        const userData = req.user; // user have decoded value 
+        const userId = userData.id;
+        const user = await Person.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        res.status(200).json({ user });
+    } catch (err) {
+        console.error('Error fetching user profile:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+  
+  
+
+
+
+
+router.get('/', jwtAuthMiddleware, async (req, res) => {
     try {
         const data = await Person.find();
         console.log('Data fetched:', data);
